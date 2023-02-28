@@ -78,6 +78,9 @@ setup_kwargs = {
             "deacoastlines-continental = coastlines.continental:continental_cli",
         ]
     },
+    "use_scm_version":{"root": "..",
+                       "relative_to": __file__,
+                       "version_scheme": "no-guess-dev"}
 }
 
 setup(**setup_kwargs)

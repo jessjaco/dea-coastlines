@@ -440,6 +440,8 @@ def export_annual_gapfill(
     current_ds = None
     future_ds = None
 
+    export_geotiff = False if output_dir is None else True
+
     # Iterate through each year in the dataset, starting at one year before
     for year in np.arange(start_year - 2, end_year + 1):
 
@@ -474,7 +476,7 @@ def export_annual_gapfill(
                 label=year,
                 label_dim="year",
                 output_dir=output_dir,
-                export_geotiff=True,
+                export_geotiff=export_geotiff,
             )
 
         # If ALL of the previous, current and future year vars contain data,
@@ -483,6 +485,7 @@ def export_annual_gapfill(
         if previous_ds and current_ds and future_ds:
 
             # Concatenate the three years into one xarray.Dataset
+            breakpoint()
             gapfill_ds = xr.concat([previous_ds, current_ds, future_ds], dim="time")
 
             # Generate composite
@@ -492,7 +495,7 @@ def export_annual_gapfill(
                 label_dim="year",
                 output_dir=output_dir,
                 output_suffix="_gapfill",
-                export_geotiff=True,
+                export_geotiff=export_geotiff,
             )
 
         # Shift all loaded data back so that we can re-use it in the next

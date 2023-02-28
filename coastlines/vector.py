@@ -248,7 +248,7 @@ def coastal_masking(ds, ocean_da, buffer=33):
 
     # Generate coastal buffer from ocean-land boundary
     coastal_mask = xr.apply_ufunc(
-        _coastal_buffer, all_time_ocean, disk(buffer), dask="parallelized"
+        _coastal_buffer, all_time_ocean, disk(buffer), dask="allowed"
     )
 
     # Return coastal mask as 1, and land pixels as 2
@@ -487,6 +487,7 @@ def contours_preprocess(
     mask_temporal=True,
     mask_modifications=None,
     debug=False,
+    coastal_da=False
 ):
     """
     Prepares and preprocesses DEA Coastlines raster data to
@@ -587,17 +588,19 @@ def contours_preprocess(
     # the `black_tophat` transform. So narrow channels between islands
     # and the mainland aren't mistaken for rivers, first apply `sieve`
     # to any connected land pixels (i.e. islands) smaller than 5 km^2
-    island_size = int(5000000 / (30 * 30))  # 5 km^2
-    sieved = xr.apply_ufunc(sieve, all_time.astype(np.int16), island_size)
-    rivers = xr.apply_ufunc(black_tophat, (sieved & all_time), disk(5)) == 1
+    island_size_5k = int(5000000 / (30 * 30))  # 5 km^2
+    max_island_size = np.prod(all_time.shape)
+    island_size = min(island_size_5k, max_island_size)
+    sieved = xr.apply_ufunc(sieve, all_time.squeeze().astype(np.int16), island_size, dask="allowed")
+    rivers = xr.apply_ufunc(black_tophat, (sieved & all_time), disk(5), dask="allowed") == 1
     all_time_clean = all_time.where(~rivers, True)
 
     # Create a river mask by eroding the all time layer to clip out river
     # and estuary mouths, then expanding river features to include stream
     # banks and account for migrating rivers
-    all_time_eroded = xr.apply_ufunc(binary_erosion, all_time_clean, disk(10))
+    all_time_eroded = xr.apply_ufunc(binary_erosion, all_time_clean, disk(10), dask="allowed")
     rivers = rivers.where(all_time_eroded, False)
-    river_mask = ~xr.apply_ufunc(binary_dilation, rivers, disk(5))
+    river_mask = ~xr.apply_ufunc(binary_dilation, rivers, disk(5), dask='allowed')
 
     # Load Geodata 100K coastal layer to use to separate ocean waters from
     # other inland waters. This product has values of 0 for ocean waters,
@@ -605,12 +608,14 @@ def contours_preprocess(
     # pixels (value 0), then erode these by 10 pixels to ensure we only
     # use high certainty deeper water ocean regions for identifying ocean
     # pixels in our satellite imagery
-    dc = datacube.Datacube()
-    geodata_da = dc.load(
-        product="geodata_coast_100k",
-        like=combined_ds.odc.geobox.compat,
-    ).land.squeeze("time")
-    ocean_da = xr.apply_ufunc(binary_erosion, geodata_da == 0, disk(10))
+    if coastal_da is None:
+        dc = datacube.Datacube()
+        coastal_da = dc.load(
+            product="geodata_coast_100k",
+            like=combined_ds.odc.geobox.compat,
+        ).land.squeeze("time")
+
+    ocean_da = xr.apply_ufunc(binary_erosion, coastal_da == 0, disk(10))
 
     # Use all time and Geodata 100K data to produce the buffered coastal
     # study area. Morphological closing helps to "close" the entrances of
